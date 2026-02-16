@@ -1,0 +1,247 @@
+services:
+  # PostgreSQL - Structured data storage
+  postgres:
+    image: postgres:15
+    container_name: nyc-taxi-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taxiuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taxipass}
+      POSTGRES_DB: ${POSTGRES_DB:-nyc_taxi}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./microservices/storage/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - taxi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxiuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO - Object storage for raw data
+  minio:
+    image: minio/minio:latest
+    container_name: nyc-taxi-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - taxi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client - Initialize buckets
+  minio-init:
+    image: minio/mc:latest
+    container_name: nyc-taxi-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/raw-data --ignore-existing;
+      /usr/bin/mc mb myminio/processed-data --ignore-existing;
+      /usr/bin/mc mb myminio/models --ignore-existing;
+      echo 'Buckets created successfully';
+      "
+    networks:
+      - taxi-network
+
+  # Apache Spark Master
+  spark-master:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: nyc-taxi-spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    volumes:
+      - ./microservices/processing:/opt/spark-apps
+      - ./data:/opt/spark-data
+    networks:
+      - taxi-network
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Apache Spark Worker
+  spark-worker:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: nyc-taxi-spark-worker
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_WEBUI_PORT=8081
+    volumes:
+      - ./microservices/processing:/opt/spark-apps
+      - ./data:/opt/spark-data
+    networks:
+      - taxi-network
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+
+  # Apache Airflow - Scheduler
+  airflow-scheduler:
+    #image: apache/airflow:2.7.0-python3.10
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: nyc-taxi-airflow-scheduler
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://taxiuser:taxipass@postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_SECRET_KEY:-secret}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./microservices:/opt/airflow/microservices
+      - ./data:/opt/airflow/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: scheduler
+    networks:
+      - taxi-network
+    restart: unless-stopped
+
+  # Apache Airflow - Webserver
+  airflow-webserver:
+    #image: apache/airflow:2.7.0-python3.10
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: nyc-taxi-airflow-webserver
+    depends_on:
+      - postgres
+      - airflow-scheduler
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://taxiuser:taxipass@postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=}
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_SECRET_KEY:-secret}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./microservices:/opt/airflow/microservices
+      - ./data:/opt/airflow/data
+    ports:
+      - "8080:8080"
+    command: webserver
+    networks:
+      - taxi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Airflow Init - Initialize database
+  airflow-init:
+    image: apache/airflow:2.7.0-python3.10
+    container_name: nyc-taxi-airflow-init
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://taxiuser:taxipass@postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com
+      "
+    networks:
+      - taxi-network
+
+  # Data Ingestion Service
+  ingestion-service:
+    build:
+      context: ./microservices/ingestion
+      dockerfile: Dockerfile
+    container_name: nyc-taxi-ingestion
+    depends_on:
+      - postgres
+      - minio
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=taxiuser
+      - POSTGRES_PASSWORD=taxipass
+      - POSTGRES_DB=nyc_taxi
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=raw-data
+    volumes:
+      - ./data:/app/data
+      - ./microservices/ingestion:/app
+    networks:
+      - taxi-network
+    # Keep container running (it will be triggered by Airflow)
+    command: tail -f /dev/null
+    restart: unless-stopped
+
+  # Data Delivery API
+  delivery-api:
+    build:
+      context: ./microservices/delivery
+      dockerfile: Dockerfile
+    container_name: nyc-taxi-api
+    depends_on:
+      - postgres
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=taxiuser
+      - POSTGRES_PASSWORD=taxipass
+      - POSTGRES_DB=nyc_taxi
+      - API_KEY=${API_KEY:-your-secret-api-key}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./microservices/delivery:/app
+    networks:
+      - taxi-network
+    restart: unless-stopped
+
+networks:
+  taxi-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:

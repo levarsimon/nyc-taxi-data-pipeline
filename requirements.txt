@@ -1,0 +1,36 @@
+# Main Python dependencies for NYC Taxi Data Pipeline
+
+# Data Processing
+pandas==2.1.0
+numpy==1.24.3
+pyspark==3.4.0
+
+# Database
+psycopg2-binary==2.9.7
+sqlalchemy==2.0.21
+
+# Object Storage
+minio==7.1.17
+
+# API
+fastapi==0.104.0
+uvicorn[standard]==0.24.0
+pydantic==2.4.2
+
+# Airflow (handled by Airflow container)
+# apache-airflow==2.7.0
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Testing
+pytest==7.4.2
+pytest-cov==4.1.0
+
+# Logging
+python-json-logger==2.0.7
+
+# Development
+ipython==8.15.0
+jupyter==1.0.0

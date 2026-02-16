@@ -1,0 +1,55 @@
+# Data files
+data/raw/*.csv
+data/processed/*.csv
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Airflow
+airflow/logs/
+airflow/plugins/
+airfloew/dags/__pycache__/
+airflow//__pycache__/
+!airflow/logs/.gitkeep
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/webserver_config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.Python
+
+# Environments
+.env.local
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker volumes
+postgres-data/
+minio_data/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MinIO data
+minio_data/
+
+# PostgreSQL data
+postgres_data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
