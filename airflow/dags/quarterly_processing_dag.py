@@ -9,6 +9,7 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
 import logging
+import psycopg2
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,7 @@ default_args = {
 
 def check_raw_data(**context):
     """Check if raw data is available for processing"""
-    import psycopg2
-    
+        
     conn = psycopg2.connect(
         host='postgres',
         port=5432,
@@ -61,8 +61,7 @@ def generate_batch_id(**context):
 
 def validate_processing(**context):
     """Validate that processing completed successfully"""
-    import psycopg2
-    
+        
     conn = psycopg2.connect(
         host='postgres',
         port=5432,
@@ -123,7 +122,7 @@ def cleanup_old_data(**context):
     
     cursor = conn.cursor()
     
-    # This is a placeholder - implement actual cleanup logic based on business rules
+    # Logic can be placed here to implement actual cleanup based on business rules
     logger.info("Cleanup: Keeping all data (no cleanup configured)")
     
     cursor.close()
@@ -135,12 +134,9 @@ def run_spark_processing(**context):
     Trigger Spark processing
     
     NOTE: Due to Docker API limitations, this step provides instructions
-    for running Spark processing manually. In production, this would use
+    for running Spark processing manually. In actual production, this would use
     SparkSubmitOperator or KubernetesPodOperator.
     """
-    
-    import subprocess
-    #import sys
     
     logger.info("="*60)
     logger.info("SPARK PROCESSING STEP")
@@ -157,8 +153,8 @@ def run_spark_processing(**context):
     logger.info("")
     logger.info("="*60)
     logger.info("")
-    logger.info("For this demo, we'll mark this step as complete.")
-    logger.info("In production, use SparkSubmitOperator with proper Spark cluster.")
+    logger.info("For this project, I'll mark this step as complete.")
+    logger.info("In actual production, SparkSubmitOperator with proper Spark cluster can be used.")
     logger.info("")
     
     # Return success message
@@ -167,35 +163,6 @@ def run_spark_processing(**context):
         'message': 'Run Spark processing manually using the command above',
         'command': 'docker exec nyc-taxi-spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --packages org.postgresql:postgresql:42.6.0 /opt/spark-apps/processing_service.py'
     }
-    
-    """
-    logger.info("Installing pyspark if needed...")
-    subprocess.check_call([
-        sys.executable, '-m', 'pip', 'install', '--quiet',
-        'pyspark==3.4.0', 'psycopg2-binary==2.9.7'
-    ])
-    
-    logger.info("Starting Spark processing...")
-    
-    # Run the processing script directly with Python
-    # The script will connect to the Spark master
-    result = subprocess.run(
-        [sys.executable, '/opt/airflow/microservices/processing/processing_service.py'],
-        capture_output=True,
-        text=True,
-        env={
-            **subprocess.os.environ,
-            'SPARK_MASTER': 'spark://spark-master:7077'
-        }
-    )
-    
-    if result.returncode != 0:
-        logger.error(f"Spark processing failed: {result.stderr}")
-        raise Exception(f"Spark processing failed: {result.stderr}")
-    
-    logger.info(f"Spark processing completed: {result.stdout}")
-    return result.stdout
-    """
 
 # Create DAG
 with DAG(

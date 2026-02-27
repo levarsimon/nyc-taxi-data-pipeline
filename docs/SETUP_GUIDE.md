@@ -1,9 +1,7 @@
 # NYC Taxi Data Pipeline - Setup Guide
 
-## Prerequisites
-
 ### System Requirements
-- **OS**: Linux, macOS, or Windows with WSL2
+- **OS**: Linux, macOS, or Windows with Windows Subsystem for Linux 2
 - **RAM**: Minimum 8GB (16GB recommended)
 - **Storage**: 10GB free space
 - **Docker**: Version 20.10 or higher
@@ -20,6 +18,12 @@ sudo apt-get install docker.io docker-compose
 # macOS
 brew install docker docker-compose
 
+# Windows
+Docker Desktop requires Windows Subsystem for Linux 2 (WSL2)
+wsl --install
+Download Docker Desktop installer from https://www.docker.com/products/docker-desktop/
+Run the installer
+
 # Verify installation
 docker --version
 docker-compose --version
@@ -27,30 +31,18 @@ docker-compose --version
 
 #### 2. Clone Repository
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/levarsimon/nyc-taxi-data-pipeline.git
 cd nyc-taxi-data-pipeline
 ```
 
-## Data Preparation
-
 ### Download NYC Taxi Dataset
 
-1. Go to Kaggle: https://www.kaggle.com/c/nyc-taxi-trip-duration/data
-2. Download `train.csv` (1.4M+ records, ~200MB)
-3. Place the file in the project:
-   ```bash
-   mkdir -p data/raw
-   mv ~/Downloads/train.csv data/raw/
-   ```
+1. Go to Kaggle: https://www.kaggle.com/datasets/yasserh/nyc-taxi-trip-duration
+2. Download `NYC.csv.zip` (1.4M+ records, ~200MB)
+3. Extract `NYC.csv` from the zip file
+4. Rename `NYC.csv`  to `train.csv`
+5. Place `train.csv` in data/raw/
 
-### Verify Data
-```bash
-# Check file exists
-ls -lh data/raw/train.csv
-
-# Quick preview (first 5 rows)
-head -n 5 data/raw/train.csv
-```
 
 ## Project Setup
 
@@ -65,7 +57,7 @@ nano .env
 # Update these values for production:
 POSTGRES_PASSWORD=<strong-password>
 MINIO_ROOT_PASSWORD=<strong-password>
-API_KEY=<your-secure-api-key>
+API_KEY=<the-secure-api-key>
 ```
 
 ### Step 2: Build and Start Services
@@ -118,50 +110,31 @@ docker-compose logs -f airflow-webserver
 
 ## Running the Pipeline
 
-### Method 1: Using Airflow UI (Recommended)
-
 1. Open Airflow UI: http://localhost:8080
 2. Enable DAGs:
    - Toggle `monthly_ingestion` to ON
    - Toggle `quarterly_processing` to ON
-3. Trigger manually:
-   - Click on `monthly_ingestion`
-   - Click "Trigger DAG" (play button)
-   - Wait for completion (~5-10 minutes depending on your machine)
+3. Trigger monthly ingestion (one of the options):
+   a. Manually:
+      - Click on `monthly_ingestion`
+      - Click "Trigger DAG" (play button)
+      - Wait for completion (~5-10 minutes depending on your machine)
+   b. Using Airflow CLI:
+      ```bash
+      docker-compose exec airflow-scheduler airflow dags trigger monthly_ingestion
+      ```
+   c. Run ingestion directly:
+      ```bash
+      docker-compose exec ingestion-service python ingestion_service.py /app/data/raw/train.csv
+      ```
 4. After ingestion completes, trigger processing:
-   - Click on `quarterly_processing`
-   - Click "Trigger DAG"
-   - Wait for completion (~10-20 minutes)
-
-### Method 2: Using Airflow CLI
-
-```bash
-# Trigger monthly ingestion
-docker-compose exec airflow-scheduler \
-  airflow dags trigger monthly_ingestion
-
-# Wait for completion, then trigger processing
-docker-compose exec airflow-scheduler \
-  airflow dags trigger quarterly_processing
+   ```bash
+   script/run_spark_processing.bat
+   ```
 
 # Check DAG status
-docker-compose exec airflow-scheduler \
-  airflow dags list-runs -d monthly_ingestion
-```
-
-### Method 3: Direct Execution (Development/Testing)
-
 ```bash
-# Run ingestion directly
-docker-compose exec ingestion-service \
-  python ingestion_service.py /app/data/raw/train.csv
-
-# Run processing directly
-docker-compose exec spark-master \
-  spark-submit \
-  --master spark://spark-master:7077 \
-  --packages org.postgresql:postgresql:42.6.0 \
-  /opt/spark-apps/processing_service.py
+docker-compose exec airflow-scheduler airflow dags list-runs -d monthly_ingestion
 ```
 
 ## Verification
@@ -187,7 +160,7 @@ SELECT COUNT(*) FROM aggregated.daily_stats;
 1. Open MinIO Console: http://localhost:9001
 2. Login with credentials
 3. Navigate to `raw-data` bucket
-4. You should see uploaded CSV files
+4. You should see uploaded CSV file
 
 ### 3. Test API
 
@@ -196,16 +169,13 @@ SELECT COUNT(*) FROM aggregated.daily_stats;
 curl http://localhost:8000/health
 
 # Get statistics (requires API key)
-curl -H "X-API-Key: your-secret-api-key" \
-  http://localhost:8000/stats
+curl -H "X-API-Key: the-secret-api-key" http://localhost:8000/stats
 
 # Get sample trips
-curl -H "X-API-Key: your-secret-api-key" \
-  "http://localhost:8000/trips?limit=10"
+curl -H "X-API-Key: the-secret-api-key" "http://localhost:8000/trips?limit=10"
 
 # Get hourly aggregations
-curl -H "X-API-Key: your-secret-api-key" \
-  "http://localhost:8000/aggregated/hourly?limit=10"
+curl -H "X-API-Key: the-secret-api-key" "http://localhost:8000/aggregated/hourly?limit=10"
 ```
 
 ### 4. API Interactive Documentation
@@ -232,15 +202,6 @@ docker-compose logs -f delivery-api
 docker-compose logs --since 30m -f
 ```
 
-### Check Resource Usage
-
-```bash
-# Container stats
-docker stats
-
-# Disk usage
-docker system df
-```
 
 ## Troubleshooting
 
@@ -250,64 +211,11 @@ docker system df
 # Stop all services
 docker-compose down
 
-# Remove volumes (WARNING: deletes all data)
+# Remove volumes (deletes all data)
 docker-compose down -v
 
 # Rebuild and start
 docker-compose up -d --build
-```
-
-### Issue: Out of memory
-
-```bash
-# Adjust Docker memory limits
-# Edit docker-compose.yml, add to services:
-#   mem_limit: 2g
-#   memswap_limit: 2g
-
-# Or increase Docker Desktop memory allocation
-```
-
-### Issue: Port conflicts
-
-```bash
-# Check which process uses port
-lsof -i :8080  # for Airflow
-lsof -i :5432  # for PostgreSQL
-
-# Kill process or change port in docker-compose.yml
-```
-
-### Issue: Airflow DAGs not appearing
-
-```bash
-# Restart Airflow scheduler
-docker-compose restart airflow-scheduler
-
-# Check DAG folder permissions
-ls -la airflow/dags/
-
-# Verify DAG syntax
-docker-compose exec airflow-scheduler \
-  python -m py_compile /opt/airflow/dags/monthly_ingestion_dag.py
-```
-
-### Issue: Spark job fails
-
-```bash
-# Check Spark logs
-docker-compose logs spark-master
-docker-compose logs spark-worker
-
-# Verify PostgreSQL JDBC driver
-docker-compose exec spark-master \
-  ls -la /opt/spark/jars/postgresql*.jar
-
-# If missing, download it:
-docker-compose exec spark-master bash
-cd /opt/spark/jars
-wget https://jdbc.postgresql.org/download/postgresql-42.6.0.jar
-exit
 ```
 
 ## Stopping the Pipeline
@@ -350,14 +258,6 @@ rm -rf data/processed/*
 docker-compose up -d
 ```
 
-## Next Steps
-
-1. **Customize Processing**: Edit `processing_service.py` to add custom features
-2. **Adjust Scheduling**: Modify DAG schedules in `airflow/dags/`
-3. **Add Monitoring**: Integrate Prometheus/Grafana
-4. **Deploy to Cloud**: Adapt for AWS/Azure/GCP
-5. **Add ML Models**: Connect your ML training pipeline to the API
-
 ## Common Commands Reference
 
 ```bash
@@ -385,24 +285,3 @@ docker-compose ps
 # View resource usage
 docker stats
 ```
-
-## Getting Help
-
-- Check logs: `docker-compose logs -f`
-- Airflow UI: http://localhost:8080
-- API Docs: http://localhost:8000/docs
-- GitHub Issues: <your-repo-url>/issues
-
-## Production Deployment
-
-For production deployment:
-1. Use strong passwords in `.env`
-2. Enable HTTPS/SSL
-3. Set up proper backups
-4. Configure monitoring and alerting
-5. Use secrets management (e.g., HashiCorp Vault)
-6. Deploy to Kubernetes or cloud services
-7. Set up CI/CD pipeline
-8. Configure autoscaling
-9. Enable audit logging
-10. Implement disaster recovery plan

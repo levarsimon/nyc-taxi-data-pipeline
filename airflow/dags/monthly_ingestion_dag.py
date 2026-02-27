@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import logging
 import os
 import sys
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,6 @@ default_args = {
 
 def check_data_availability(**context):
     """Check if new data is available for ingestion"""
-    #import os
     data_path = '/opt/airflow/data/raw/train.csv'
     
     if not os.path.exists(data_path):
@@ -44,9 +44,7 @@ def check_data_availability(**context):
 
 def run_ingestion_task(**context):
     """Run ingestion service"""
-    #import sys
-    import subprocess
-    
+        
     # Install required packages in Airflow if not already installed
     subprocess.check_call([
         sys.executable, '-m', 'pip', 'install', '--quiet',
@@ -142,7 +140,7 @@ with DAG(
         provide_context=True,
     )
     
-    # Task 4: Send notification (placeholder)
+    # Task 4: Send notification
     notify = BashOperator(
         task_id='send_notification',
         bash_command='echo "Ingestion completed successfully at $(date)"',

@@ -38,7 +38,7 @@ POSTGRES_CONFIG = {
     'database': os.getenv('POSTGRES_DB', 'nyc_taxi')
 }
 
-API_KEY = os.getenv('API_KEY', 'your-secret-api-key')
+API_KEY = os.getenv('API_KEY', 'the-secret-api-key')
 
 
 # Pydantic models
