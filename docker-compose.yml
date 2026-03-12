@@ -229,7 +229,7 @@ services:
       - POSTGRES_USER=taxiuser
       - POSTGRES_PASSWORD=taxipass
       - POSTGRES_DB=nyc_taxi
-      - API_KEY=${API_KEY:the-secret-api-key}
+      - API_KEY=${API_KEY:-the-secret-api-key}
     ports:
       - "8000:8000"
     volumes:

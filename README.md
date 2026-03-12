@@ -3,7 +3,7 @@
 ## Project Overview
 This project implements a batch-processing data architecture for processing NYC Taxi Trip Duration data. The system is designed to handle millions of records using microservices architecture, containerization, and Infrastructure as Code principles.
 
-## Quick Start
+## Quick Start (For detailed setup guide refer to docs/SETUP_GUIDE.md)
 
 ```bash
 # Clone repository
@@ -26,6 +26,11 @@ docker-compose up -d
 # Run initial data ingestion
 docker-compose exec airflow airflow dags trigger monthly_ingestion
 
-# Run quarterly processing
+# RUN QUARTERLY PROCESSING
+# Windows
 scripts/run_spark_processing.bat
+
+# Mac
+chmod +x scripts/run_spark_processing.sh    # make the script executable
+./scripts/run_spark_processing.sh     # run the script
 ```

@@ -129,7 +129,12 @@ docker-compose logs -f airflow-webserver
       ```
 4. After ingestion completes, trigger processing:
    ```bash
+   # Windows
    script/run_spark_processing.bat
+
+   # Mac
+   chmod +x scripts/run_spark_processing.sh    # make the script executable
+   ./scripts/run_spark_processing_.sh     # run the script
    ```
 
 # Check DAG status
